@@ -182,8 +182,8 @@ function Dashboard({ posts, accounts, onCreate, onDelete }) {
       <section className="welcome-card">
         <div className="welcome-copy">
           <span className="welcome-kicker">مساحة إدارة حساباتك</span>
-          <h2>جهّز منشورك وجدول نشره بسهولة</h2>
-          <p>اكتب المحتوى، واختر الحسابات المرتبطة، وحدد موعد النشر. يتولى النظام إرسال المنشور ويتابع نتيجة كل منصة.</p>
+          <h2>OSLO AUTO POST</h2>
+          <p>المايسترو الخفي الذي يقود سيمفونية حضورك الرقمي عبر كل المنصات بضغطة زر. صمم محتواك وجدوله بذكاء، ليتكفل نظامنا الآلي بنشره في اللحظة المثالية، حتى وأنت غارق في أحلامك! تجاوز فوضى التطبيقات وقيود الوقت، وتفرّغ لصناعة الإبداع بينما نتولى نحن إيصال صوتك للعالم.</p>
           <button className="button button-dark" onClick={onCreate}><Plus size={17} /> ابدأ بإنشاء منشور</button>
         </div>
         <div className="welcome-art"><Send size={45} strokeWidth={1.4} /></div>
