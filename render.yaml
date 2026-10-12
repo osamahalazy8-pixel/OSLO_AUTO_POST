@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: oslo-auto-post
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/ping
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: post-media
+      - key: SCHEDULER_ENABLED
+        value: "true"
+      - key: META_GRAPH_API_VERSION
+        value: v22.0
+      - key: X_API_BASE_URL
+        value: https://api.x.com/2
