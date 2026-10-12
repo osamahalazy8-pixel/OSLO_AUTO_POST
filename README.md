@@ -10,7 +10,7 @@ It intentionally has no login or signup UI.
 3. Run `npm install`, then `npm run dev`.
 4. Open the Vite URL printed in the terminal (normally `http://localhost:5173`).
 
-Generate an encryption key with `openssl rand -hex 32`. Keep it stable and backed up: changing it makes already stored platform tokens unreadable.
+Generate an encryption key with `openssl rand -hex 32`. A 64-character hexadecimal key is recommended; the backend also accepts a base64-encoded 32-byte key or a passphrase of at least 16 characters and derives a 32-byte key from it. Keep the exact value stable and backed up: changing it makes already stored platform tokens unreadable.
 The Supabase service-role key and encryption key must only exist in the backend environment; never add them to frontend variables or source control.
 
 ## Render
@@ -23,7 +23,7 @@ Deploy the repository as one Node Web Service using `npm install && npm run buil
 | `PORT` | Leave unset; Render supplies this automatically. Use `3001` only for local development. |
 | `SUPABASE_URL` | Project URL from Supabase → Project Settings → API, e.g. `https://<project-ref>.supabase.co`. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role/secret key from Project Settings → API. Keep server-side only. |
-| `ENCRYPTION_KEY` | A newly generated 32-byte key encoded as 64 hexadecimal characters. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` and keep a secure backup. |
+| `ENCRYPTION_KEY` | Recommended: a newly generated 32-byte key encoded as 64 hexadecimal characters. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. The backend also accepts base64-encoded 32-byte keys or passphrases of at least 16 characters. Keep the exact value stable and backed up. |
 | `SUPABASE_STORAGE_BUCKET` | `post-media` (created by the SQL script). |
 | `SCHEDULER_ENABLED` | `true` to enable scheduled publishing. Run only one Render instance with this enabled. |
 | `META_GRAPH_API_VERSION` | `v22.0` (change when upgrading to a supported Meta Graph API version). |
