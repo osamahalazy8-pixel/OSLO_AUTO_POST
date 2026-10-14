@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 process.env.SUPABASE_URL = 'https://test-project.supabase.co';
+process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
 process.env.ENCRYPTION_KEY = 'test-encryption-passphrase';
 
@@ -15,9 +16,8 @@ function createAccount(accountId) {
   };
 }
 
-function mockMetaResponses(t) {
+function mockMetaResponses(t, responses = [{ id: 'container-id' }, { id: 'published-post-id' }]) {
   const requests = [];
-  const responses = [{ id: 'container-id' }, { id: 'published-post-id' }];
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     requests.push({ url: String(url), options });
     return {
@@ -75,5 +75,77 @@ test('publishes Facebook text posts with a form-encoded Graph API request', asyn
   assert.equal(requests.length, 1);
   assertFormRequest(requests[0], '/v22.0/facebook-page-id/feed', {
     message: 'A caption'
+  });
+});
+
+test('publishes Instagram image carousels through child containers and a parent container', async (t) => {
+  const requests = mockMetaResponses(t, [
+    { id: 'first-child' },
+    { id: 'second-child' },
+    { id: 'carousel-container' },
+    { id: 'published-carousel' }
+  ]);
+
+  const result = await publishToPlatform(
+    'instagram',
+    createAccount('instagram-account-id'),
+    'Carousel caption',
+    [
+      { url: 'https://media.example/first.jpg', mimeType: 'image/jpeg' },
+      { url: 'https://media.example/second.jpg', mimeType: 'image/jpeg' }
+    ]
+  );
+
+  assert.equal(result, 'published-carousel');
+  assert.equal(requests.length, 4);
+  assertFormRequest(requests[0], '/v22.0/instagram-account-id/media', {
+    image_url: 'https://media.example/first.jpg',
+    is_carousel_item: 'true'
+  });
+  assertFormRequest(requests[1], '/v22.0/instagram-account-id/media', {
+    image_url: 'https://media.example/second.jpg',
+    is_carousel_item: 'true'
+  });
+  assertFormRequest(requests[2], '/v22.0/instagram-account-id/media', {
+    media_type: 'CAROUSEL',
+    children: 'first-child,second-child',
+    caption: 'Carousel caption'
+  });
+  assertFormRequest(requests[3], '/v22.0/instagram-account-id/media_publish', {
+    creation_id: 'carousel-container'
+  });
+});
+
+test('publishes Facebook photo albums and preserves attachment order', async (t) => {
+  const requests = mockMetaResponses(t, [
+    { id: 'first-photo' },
+    { id: 'second-photo' },
+    { id: 'album-post' }
+  ]);
+
+  const result = await publishToPlatform(
+    'facebook',
+    createAccount('facebook-page-id'),
+    'Album caption',
+    [
+      { url: 'https://media.example/first.jpg', mimeType: 'image/jpeg' },
+      { url: 'https://media.example/second.jpg', mimeType: 'image/jpeg' }
+    ]
+  );
+
+  assert.equal(result, 'album-post');
+  assert.equal(requests.length, 3);
+  assertFormRequest(requests[0], '/v22.0/facebook-page-id/photos', {
+    url: 'https://media.example/first.jpg',
+    published: 'false'
+  });
+  assertFormRequest(requests[1], '/v22.0/facebook-page-id/photos', {
+    url: 'https://media.example/second.jpg',
+    published: 'false'
+  });
+  assertFormRequest(requests[2], '/v22.0/facebook-page-id/feed', {
+    message: 'Album caption',
+    'attached_media[0]': '{"media_fbid":"first-photo"}',
+    'attached_media[1]': '{"media_fbid":"second-photo"}'
   });
 });

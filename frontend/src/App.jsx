@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle, ArrowUpRight, BookOpenText, CalendarClock, Check, CheckCircle2, Clock3,
-  FileImage, LoaderCircle, Plus, Send, Settings2, Trash2, UploadCloud
+  FileImage, LoaderCircle, Plus, Send, Settings2, Trash2, UploadCloud, LogOut, ArrowDown, ArrowUp, X
 } from 'lucide-react';
 import { api, formatBytes, formatDate, localizeError } from './api.js';
+import Auth from './Auth.jsx';
+import UserSettings from './UserSettings.jsx';
 
 const platformNames = {
   instagram: 'Instagram',
@@ -27,43 +29,14 @@ function localDateTimeValue(date) {
   return local.toISOString().slice(0, 16);
 }
 
-async function readDimensions(file) {
-  if (file.type.startsWith('image/')) {
-    const image = await createImageBitmap(file);
-    const dimensions = { width: image.width, height: image.height };
-    image.close();
-    return dimensions;
-  }
-  if (file.type.startsWith('video/')) {
-    const url = URL.createObjectURL(file);
-    try {
-      return await new Promise((resolve, reject) => {
-        const video = document.createElement('video');
-        video.preload = 'metadata';
-        video.onloadedmetadata = () => {
-          URL.revokeObjectURL(url);
-          resolve({ width: video.videoWidth, height: video.videoHeight });
-        };
-        video.onerror = () => {
-          URL.revokeObjectURL(url);
-          reject(new Error('تعذرت قراءة أبعاد الفيديو. جرّب ملفًا آخر.'));
-        };
-        video.src = url;
-      });
-    } catch (error) {
-      URL.revokeObjectURL(url);
-      throw error;
-    }
-  }
-  return { width: null, height: null };
-}
-
 function App() {
   const [section, setSection] = useState('dashboard');
   const [accounts, setAccounts] = useState([]);
   const [posts, setPosts] = useState([]);
   const [limits, setLimits] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [user, setUser] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -79,6 +52,10 @@ function App() {
       setPosts(postData);
       setLimits(platformData);
     } catch (loadError) {
+      if (loadError.status === 401) {
+        setUser(null);
+        return;
+      }
       setError(localizeError(loadError.message));
     } finally {
       setLoading(false);
@@ -86,14 +63,51 @@ function App() {
   }, []);
 
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    api('/api/auth/session')
+      .then((result) => setUser(result.user))
+      .catch((sessionError) => {
+        if (sessionError.status !== 401) setError(localizeError(sessionError.message));
+      })
+      .finally(() => setAuthChecked(true));
+  }, []);
+
+  useEffect(() => {
+    if (!authChecked) return;
+    if (user?.status === 'active') void loadData();
+    else setLoading(false);
+  }, [authChecked, loadData, user]);
 
   const connected = useMemo(() => new Set(accounts.map((account) => account.platform)), [accounts]);
   const showNotice = (message) => {
     setNotice(message);
     window.setTimeout(() => setNotice(''), 4500);
   };
+  const logout = async () => {
+    try {
+      await api('/api/auth/logout', { method: 'POST' });
+      setUser(null);
+      setAccounts([]);
+      setPosts([]);
+      setSection('dashboard');
+      setError('');
+    } catch (logoutError) {
+      setError(localizeError(logoutError.message));
+    }
+  };
+
+  if (!authChecked) return <div className="loading auth-loading"><LoaderCircle className="spin" /> جارٍ التحقق من جلسة الدخول…</div>;
+  if (!user) return <Auth onAuthenticated={setUser} />;
+  if (user.status !== 'active') return <main className="auth-screen">
+    <section className="auth-card">
+      <div className="auth-brand"><span className="brand-mark">O</span><div><strong>OSLO AUTO POST</strong><small>مساحة النشر الآمن</small></div></div>
+      <span className="eyebrow">حالة الحساب</span>
+      <h1>{user.status === 'pending' ? 'حسابك بانتظار الموافقة' : 'الحساب موقوف'}</h1>
+      <p className="auth-description">{user.status === 'pending'
+        ? 'سيتاح الدخول بعد أن يفعّل مالك مساحة العمل حسابك ويحدد دورك. يمكنك تسجيل الخروج والعودة لاحقًا.'
+        : 'تواصل مع مالك مساحة العمل لاستعادة إمكانية الدخول.'}</p>
+      <button className="button button-secondary auth-submit" onClick={() => void logout()}><LogOut size={16} /> تسجيل الخروج</button>
+    </section>
+  </main>;
 
   return (
     <div className="app-shell">
@@ -107,11 +121,14 @@ function App() {
           <button className={section === 'dashboard' ? 'nav-item active' : 'nav-item'} onClick={() => setSection('dashboard')}>
             <CalendarClock size={18} /> نظرة عامة
           </button>
-          <button className={section === 'compose' ? 'nav-item active' : 'nav-item'} onClick={() => setSection('compose')}>
+          {['owner', 'admin', 'editor'].includes(user.role) && <button className={section === 'compose' ? 'nav-item active' : 'nav-item'} onClick={() => setSection('compose')}>
             <Plus size={18} /> إنشاء منشور
-          </button>
-          <button className={section === 'settings' ? 'nav-item active' : 'nav-item'} onClick={() => setSection('settings')}>
+          </button>}
+          {(user.role === 'owner' || user.role === 'admin') && <button className={section === 'accounts' ? 'nav-item active' : 'nav-item'} onClick={() => setSection('accounts')}>
             <Settings2 size={18} /> ربط الحسابات
+          </button>}
+          <button className={section === 'settings' ? 'nav-item active' : 'nav-item'} onClick={() => setSection('settings')}>
+            <Settings2 size={18} /> الإعدادات
           </button>
           <button className={section === 'guide' ? 'nav-item active' : 'nav-item'} onClick={() => setSection('guide')}>
             <BookOpenText size={18} /> دليل ربط المنصات
@@ -127,11 +144,11 @@ function App() {
         <header className="topbar">
           <div>
             <div className="eyebrow">إدارة النشر على المنصات</div>
-            <h1>{section === 'settings' ? 'ربط الحسابات' : section === 'compose' ? 'إنشاء منشور' : section === 'guide' ? 'دليل ربط المنصات' : 'نظرة عامة على النشر'}</h1>
+            <h1>{section === 'accounts' ? 'ربط الحسابات' : section === 'settings' ? 'الإعدادات' : section === 'compose' ? 'إنشاء منشور' : section === 'guide' ? 'دليل ربط المنصات' : 'نظرة عامة على النشر'}</h1>
           </div>
           <div className="topbar-right">
             <span className="connected-count"><span className="status-dot" /> {connected.size} حسابات مرتبطة</span>
-            {section !== 'guide' && <button className="button button-primary button-small" onClick={() => setSection('compose')}>
+            {section !== 'guide' && section !== 'settings' && ['owner', 'admin', 'editor'].includes(user.role) && <button className="button button-primary button-small" onClick={() => setSection('compose')}>
               <Plus size={16} /> منشور جديد
             </button>}
           </div>
@@ -141,10 +158,12 @@ function App() {
         {notice && <div className="toast"><CheckCircle2 size={17} /> {notice}</div>}
         {loading ? (
           <div className="loading"><LoaderCircle className="spin" /> جارٍ تحميل مساحة العمل…</div>
-        ) : section === 'settings' ? (
+        ) : section === 'accounts' ? (
           <Connections accounts={accounts} onChange={loadData} onNotice={showNotice} onOpenGuide={() => setSection('guide')} />
+        ) : section === 'settings' ? (
+          <UserSettings user={user} onLogout={logout} onNotice={showNotice} />
         ) : section === 'compose' ? (
-          <Compose accounts={accounts} limits={limits} onOpenSettings={() => setSection('settings')} onCreated={async () => {
+          <Compose accounts={accounts} limits={limits} onOpenSettings={() => setSection(['owner', 'admin'].includes(user.role) ? 'accounts' : 'settings')} onCreated={async () => {
             await loadData();
             setSection('dashboard');
             showNotice('تمت إضافة المنشور إلى الجدول.');
@@ -152,7 +171,7 @@ function App() {
         ) : section === 'guide' ? (
           <PlatformGuide onOpenSettings={() => setSection('settings')} />
         ) : (
-          <Dashboard posts={posts} accounts={accounts} onCreate={() => setSection('compose')} onDelete={async (id) => {
+          <Dashboard posts={posts} accounts={accounts} canCreate={['owner', 'admin', 'editor'].includes(user.role)} onCreate={() => setSection('compose')} onDelete={async (id) => {
             if (!window.confirm('هل تريد حذف هذا المنشور المجدول؟')) return;
             try {
               await api(`/api/posts/${id}`, { method: 'DELETE' });
@@ -172,7 +191,7 @@ function App() {
   );
 }
 
-function Dashboard({ posts, accounts, onCreate, onDelete }) {
+function Dashboard({ posts, accounts, canCreate, onCreate, onDelete }) {
   const pending = posts.filter((post) => post.status === 'scheduled').length;
   const published = posts.filter((post) => post.status === 'published').length;
   const failed = posts.filter((post) => post.status === 'failed').length;
@@ -184,7 +203,7 @@ function Dashboard({ posts, accounts, onCreate, onDelete }) {
           <span className="welcome-kicker">مساحة إدارة حساباتك</span>
           <h2>OSLO AUTO POST</h2>
           <p>المايسترو الخفي الذي يقود سيمفونية حضورك الرقمي عبر كل المنصات بضغطة زر. صمم محتواك وجدوله بذكاء، ليتكفل نظامنا الآلي بنشره في اللحظة المثالية، حتى وأنت غارق في أحلامك! تجاوز فوضى التطبيقات وقيود الوقت، وتفرّغ لصناعة الإبداع بينما نتولى نحن إيصال صوتك للعالم.</p>
-          <button className="button button-dark" onClick={onCreate}><Plus size={17} /> ابدأ بإنشاء منشور</button>
+          {canCreate && <button className="button button-dark" onClick={onCreate}><Plus size={17} /> ابدأ بإنشاء منشور</button>}
         </div>
         <div className="welcome-art"><Send size={45} strokeWidth={1.4} /></div>
       </section>
@@ -199,14 +218,14 @@ function Dashboard({ posts, accounts, onCreate, onDelete }) {
       <section className="panel">
         <div className="section-heading">
           <div><span className="eyebrow">قائمة المحتوى</span><h2>المنشورات الأخيرة</h2></div>
-          <button className="button button-secondary button-small" onClick={onCreate}><Plus size={15} /> إنشاء منشور</button>
+          {canCreate && <button className="button button-secondary button-small" onClick={onCreate}><Plus size={15} /> إنشاء منشور</button>}
         </div>
         {posts.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon"><FileImage size={23} /></div>
             <h3>لا توجد منشورات في الجدول</h3>
             <p>أنشئ منشورك الأول، ثم اختر الحسابات وموعد النشر.</p>
-            <button className="button button-primary" onClick={onCreate}>إنشاء أول منشور</button>
+            {canCreate && <button className="button button-primary" onClick={onCreate}>إنشاء أول منشور</button>}
           </div>
         ) : (
           <div className="post-list">
@@ -218,7 +237,7 @@ function Dashboard({ posts, accounts, onCreate, onDelete }) {
                 </div>
                 <div className="post-main">
                   <p>{post.caption || <span className="muted">من دون نص</span>}</p>
-                  <span className="post-subtitle">{formatDate(post.scheduled_at)}{post.media_mime_type ? ` · ${post.media_mime_type.startsWith('video/') ? 'فيديو' : 'صورة'}` : ''}</span>
+                  <span className="post-subtitle">{formatDate(post.scheduled_at)}{post.media_mime_type ? ` · ${post.media_items?.length || 1} وسائط` : ''}</span>
                   <div className="delivery-tags">
                     {(post.post_deliveries || []).map((delivery) => (
                       <span className={`platform-tag ${delivery.status}`} key={delivery.id}>
@@ -248,34 +267,40 @@ function StatCard({ label, value, detail, icon }) {
 
 function Compose({ accounts, limits, onOpenSettings, onCreated }) {
   const [draft, setDraft] = useState({ ...emptyDraft, schedule: localDateTimeValue(new Date(Date.now() + 60 * 60 * 1000)) });
-  const [file, setFile] = useState(null);
-  const [mediaInfo, setMediaInfo] = useState(null);
-  const [validating, setValidating] = useState(false);
+  const [files, setFiles] = useState([]);
+  const [fitMode, setFitMode] = useState('blur');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const accountPlatforms = new Set(accounts.map((account) => account.platform));
   const selectedLimits = limits.filter((item) => draft.selected.includes(item.id));
   const violations = [];
+  const videos = files.filter((file) => file.type.startsWith('video/'));
+  const images = files.filter((file) => file.type.startsWith('image/'));
+  const totalSize = files.reduce((total, file) => total + file.size, 0);
 
   for (const item of selectedLimits) {
     if (draft.caption.length > item.caption) violations.push(`${item.label}: الحد الأقصى للنص هو ${item.caption} حرفًا.`);
-    if (item.needsMedia && !file) violations.push(`تتطلب منصة ${item.label} إرفاق صورة أو فيديو.`);
-    if (!file) continue;
-    if (file.size > item.maxUploadBytes) violations.push(`يتجاوز حجم الملف الحد الأعلى للرفع في هذا الخادم (${formatBytes(item.maxUploadBytes)}).`);
-    const types = [...item.imageMimeTypes, ...item.videoMimeTypes];
-    if (!types.includes(file.type)) violations.push(`${item.label}: نوع الملف ${file.type || 'المحدد'} غير مدعوم.`);
-    const isVideo = file.type.startsWith('video/');
-    const maxSize = isVideo ? item.maxVideoBytes : item.maxImageBytes;
-    if (maxSize && file.size > maxSize) violations.push(`${item.label}: الحد الأقصى لحجم الملف هو ${formatBytes(maxSize)}.`);
-    if (item.id === 'instagram' && !isVideo && mediaInfo) {
-      if (mediaInfo.width < item.imageMinWidth || mediaInfo.width > item.imageMaxWidth) {
-        violations.push('يجب أن يتراوح عرض صورة Instagram بين 320 و1440 بكسل.');
-      }
-      const ratio = mediaInfo.width / mediaInfo.height;
-      if (ratio < item.imageMinRatio || ratio > item.imageMaxRatio) {
-        violations.push('يجب أن تكون نسبة أبعاد صورة Instagram بين 4:5 و1.91:1.');
-      }
-    }
+    if (item.needsMedia && !files.length) violations.push(`تتطلب منصة ${item.label} إرفاق صورة أو فيديو.`);
+  }
+  if (files.length > 10) violations.push('الحد الأعلى هو 10 صور أو فيديوهات في المنشور الواحد.');
+  if (files.some((file) => !file.type.startsWith('image/') && !file.type.startsWith('video/'))) {
+    violations.push('اختر صورًا أو فيديوهات بصيغ شائعة مدعومة.');
+  }
+  if (files.some((file) => file.size > 100 * 1024 * 1024)) {
+    violations.push('يجب ألا يتجاوز حجم كل ملف 100 ميغابايت.');
+  }
+  if (totalSize > 250 * 1024 * 1024) violations.push('يجب ألا يتجاوز مجموع الملفات 250 ميغابايت.');
+  if (files.length && draft.selected.includes('x')) {
+    violations.push('النشر مع وسائط على منصة X غير مدعوم حاليًا؛ أزل X أو أزل الوسائط.');
+  }
+  if (files.length > 10 && draft.selected.includes('instagram')) {
+    violations.push('تدعم Instagram حتى 10 عناصر في المنشور الواحد.');
+  }
+  if (draft.selected.includes('facebook') && (videos.length > 1 || (videos.length && images.length))) {
+    violations.push('يدعم Facebook فيديو واحدًا أو ألبومًا من الصور، وليس الاثنين معًا.');
+  }
+  if (draft.selected.includes('tiktok') && (images.length || videos.length !== 1)) {
+    violations.push('يتطلب TikTok فيديو واحدًا فقط ولا يدعم الصور.');
   }
 
   const togglePlatform = (platform) => setDraft((current) => ({
@@ -285,21 +310,22 @@ function Compose({ accounts, limits, onOpenSettings, onCreated }) {
       : [...current.selected, platform]
   }));
 
-  const onFile = async (nextFile) => {
+  const onFiles = (nextFiles) => {
     setError('');
-    setFile(nextFile || null);
-    setMediaInfo(null);
-    if (!nextFile) return;
-    setValidating(true);
-    try {
-      const dimensions = await readDimensions(nextFile);
-      setMediaInfo({ ...dimensions, mimeType: nextFile.type, size: nextFile.size });
-    } catch (dimensionError) {
-      setError(localizeError(dimensionError.message));
-      setFile(null);
-    } finally {
-      setValidating(false);
+    const combined = [...files, ...nextFiles];
+    if (combined.length > 10) {
+      setError('الحد الأعلى هو 10 صور أو فيديوهات في المنشور الواحد.');
+      return;
     }
+    setFiles(combined);
+  };
+
+  const moveFile = (index, direction) => {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= files.length) return;
+    const nextFiles = [...files];
+    [nextFiles[index], nextFiles[nextIndex]] = [nextFiles[nextIndex], nextFiles[index]];
+    setFiles(nextFiles);
   };
 
   const submit = async (event) => {
@@ -307,15 +333,16 @@ function Compose({ accounts, limits, onOpenSettings, onCreated }) {
     setError('');
     if (!draft.selected.length) return setError('اختر منصة واحدة مرتبطة على الأقل.');
     if (violations.length) return setError(violations[0]);
-    if (validating) return setError('انتظر حتى ينتهي التحقق من الملف.');
     setSubmitting(true);
     try {
-      let media = null;
-      if (file) {
+      let media = [];
+      if (files.length) {
         const form = new FormData();
-        form.append('media', file);
+        form.append('platforms', JSON.stringify(draft.selected));
+        form.append('fitMode', fitMode);
+        files.forEach((file) => form.append('media', file));
         const uploaded = await api('/api/media', { method: 'POST', body: form });
-        media = { ...uploaded, ...mediaInfo };
+        media = uploaded.items;
       }
       await api('/api/posts', {
         method: 'POST',
@@ -344,18 +371,31 @@ function Compose({ accounts, limits, onOpenSettings, onCreated }) {
         <textarea id="caption" className="text-area" rows="6" maxLength={Math.max(0, ...limits.map((item) => item.caption))} placeholder="اكتب النص الذي تريد نشره..." value={draft.caption} onChange={(event) => setDraft({ ...draft, caption: event.target.value })} />
         <div className="char-count">{draft.caption.length} حرف{selectedLimits.length ? ` · الحد الأقصى للحسابات المختارة ${Math.min(...selectedLimits.map((item) => item.caption))} حرفًا` : ''}</div>
 
-        <label className="field-label field-spaced">الصورة أو الفيديو</label>
-        <label className={`upload-box ${file ? 'has-file' : ''}`}>
-          <input type="file" accept="image/*,video/*" onChange={(event) => {
-            const selectedFile = event.target.files?.[0];
+        <label className="field-label field-spaced">الصور والفيديوهات</label>
+        <label className={`upload-box ${files.length ? 'has-file' : ''}`}>
+          <input type="file" accept="image/*,video/*" multiple onChange={(event) => {
+            onFiles(Array.from(event.target.files || []));
             event.target.value = '';
-            void onFile(selectedFile);
           }} />
-          {validating ? <LoaderCircle className="spin upload-icon" /> : file ? <FileImage className="upload-icon" /> : <UploadCloud className="upload-icon" />}
-          {file ? <><strong>{file.name}</strong><span>{formatBytes(file.size)}{mediaInfo?.width ? ` · ${mediaInfo.width} × ${mediaInfo.height}px` : ''}</span></> :
-            <><strong>اختر صورة أو فيديو من جهازك</strong><span>انقر للتصفح · سيتحقق النظام من قيود المنصات المختارة</span></>}
+          {submitting ? <LoaderCircle className="spin upload-icon" /> : files.length ? <FileImage className="upload-icon" /> : <UploadCloud className="upload-icon" />}
+          {files.length
+            ? <><strong>{files.length} ملفات محددة</strong><span>{formatBytes(totalSize)} · حتى 10 عناصر، ومجموع 250 ميغابايت</span></>
+            : <><strong>اختر عدة صور أو فيديوهات</strong><span>JPEG وPNG وWebP وGIF وAVIF وTIFF وصيغ الفيديو الشائعة · حتى 10 عناصر</span></>}
         </label>
-        {file && <button type="button" className="text-button" onClick={() => void onFile(null)}>إزالة الملف</button>}
+        {files.length > 0 && <>
+          <div className="media-list">{files.map((file, index) =>
+            <MediaItem key={`${file.name}-${file.lastModified}-${index}`} file={file} index={index}
+              onMove={moveFile} onRemove={() => setFiles(files.filter((_, itemIndex) => itemIndex !== index))} />
+          )}</div>
+          <div className="fit-mode-panel">
+            <strong>طريقة ملاءمة الإطار للمنصة</strong>
+            <p>يُنشأ مقاس ملائم لكل منصة تلقائيًا. اختر ما يحدث للمساحات الزائدة:</p>
+            <div className="fit-mode-options">
+              <label><input type="radio" name="fitMode" value="blur" checked={fitMode === 'blur'} onChange={() => setFitMode('blur')} /> خلفية مموهة تحافظ على الصورة كاملة</label>
+              <label><input type="radio" name="fitMode" value="crop" checked={fitMode === 'crop'} onChange={() => setFitMode('crop')} /> قصّ لملء الإطار</label>
+            </div>
+          </div>
+        </>}
         {selectedLimits.length > 0 && <div className="validation-list">
           {selectedLimits.map((item) => <div className="validation-platform" key={item.id}>
             <strong>{item.label}</strong><span>حتى {item.caption} حرفًا</span>
@@ -389,13 +429,33 @@ function Compose({ accounts, limits, onOpenSettings, onCreated }) {
           <input id="schedule" className="text-input" type="datetime-local" min={localDateTimeValue(new Date(Date.now() + 60_000))} value={draft.schedule} onChange={(event) => setDraft({ ...draft, schedule: event.target.value })} required />
           <p className="helper-text">يتحقق المجدول كل دقيقة؛ قد يتأخر النشر الفعلي قليلًا بحسب معالجة المنصة واستجابتها.</p>
         </section>
-        <button className="button button-primary publish-button" type="submit" disabled={submitting || validating || violations.length > 0}>
+        <button className="button button-primary publish-button" type="submit" disabled={submitting || violations.length > 0}>
           {submitting ? <LoaderCircle className="spin" size={17} /> : <CalendarClock size={17} />}
           {submitting ? 'جارٍ الجدولة…' : 'جدولة المنشور'}
         </button>
       </aside>
     </form>
   );
+}
+
+function MediaItem({ file, index, onMove, onRemove }) {
+  const [preview, setPreview] = useState('');
+  useEffect(() => {
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+  return <article className="media-item">
+    <div className="media-preview">{preview && (file.type.startsWith('video/')
+      ? <video src={preview} controls preload="metadata" />
+      : <img src={preview} alt={`معاينة ${file.name}`} />)}</div>
+    <div className="media-item-info"><strong>{index + 1}. {file.name}</strong><span>{file.type || 'صيغة غير معرّفة'} · {formatBytes(file.size)}</span></div>
+    <div className="media-item-actions">
+      <button type="button" className="icon-button" aria-label="تحريك لأعلى" disabled={index === 0} onClick={() => onMove(index, -1)}><ArrowUp size={15} /></button>
+      <button type="button" className="icon-button" aria-label="تحريك لأسفل" disabled={index === 9} onClick={() => onMove(index, 1)}><ArrowDown size={15} /></button>
+      <button type="button" className="icon-button danger" aria-label="إزالة الملف" onClick={onRemove}><X size={16} /></button>
+    </div>
+  </article>;
 }
 
 function Connections({ accounts, onChange, onNotice, onOpenGuide }) {

@@ -29,7 +29,7 @@ async function processDueDeliveries() {
 
     const { data: due, error } = await supabase
       .from('post_deliveries')
-      .select('id, post_id, account_id, platform, attempts, scheduled_posts!inner(id, caption, media_path, media_mime_type, status)')
+      .select('id, post_id, account_id, platform, attempts, scheduled_posts!inner(id, caption, media_path, media_mime_type, media_items, status)')
       .eq('status', 'scheduled')
       .lte('scheduled_at', now)
       .order('scheduled_at', { ascending: true })
@@ -65,21 +65,32 @@ async function processDueDeliveries() {
           .eq('id', delivery.account_id)
           .single();
         if (accountError) throw accountError;
-        let mediaUrl = null;
-        if (post.media_path) {
+        let mediaItems = [];
+        if (Array.isArray(post.media_items) && post.media_items.length) {
+          for (const item of post.media_items) {
+            const variant = item.variants?.[delivery.platform];
+            if (!variant?.path) {
+              throw new Error(`No prepared media variant exists for ${delivery.platform}.`);
+            }
+            const { data, error } = await supabase.storage
+              .from(config.storageBucket)
+              .createSignedUrl(variant.path, 60 * 60);
+            if (error) throw error;
+            mediaItems.push({ url: data.signedUrl, mimeType: variant.mimeType });
+          }
+        } else if (post.media_path) {
           const { data, error } = await supabase.storage
             .from(config.storageBucket)
             .createSignedUrl(post.media_path, 60 * 60);
           if (error) throw error;
-          mediaUrl = data.signedUrl;
+          mediaItems = [{ url: data.signedUrl, mimeType: post.media_mime_type || '' }];
         }
 
         const publishResult = await publishToPlatform(
           delivery.platform,
           account,
           post.caption,
-          mediaUrl,
-          post.media_mime_type
+          mediaItems
         );
         const isProcessing = delivery.platform === 'tiktok';
         const { error: updateError } = await supabase

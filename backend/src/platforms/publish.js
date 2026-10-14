@@ -25,60 +25,100 @@ async function postMetaGraph(url, params) {
   });
 }
 
-async function publishFacebook(account, caption, mediaUrl, mimeType) {
+async function publishFacebook(account, caption, mediaItems) {
   const version = config.metaGraphApiVersion;
   const root = `https://graph.facebook.com/${version}/${encodeURIComponent(account.account_id)}`;
   const token = decryptSecret(account.access_token_enc);
-  let result;
-  if (!mediaUrl) {
-    result = await postMetaGraph(`${root}/feed`, { message: caption, access_token: token });
-  } else {
-    const isVideo = mimeType.startsWith('video/');
-    const endpoint = isVideo ? 'videos' : 'photos';
-    result = await postMetaGraph(`${root}/${endpoint}`, {
-      [isVideo ? 'file_url' : 'url']: mediaUrl,
-      [isVideo ? 'description' : 'caption']: caption,
+  if (!mediaItems.length) {
+    const result = await postMetaGraph(`${root}/feed`, { message: caption, access_token: token });
+    return result.id || result.post_id || 'published';
+  }
+  const isVideo = mediaItems[0].mimeType.startsWith('video/');
+  if (isVideo) {
+    const result = await postMetaGraph(`${root}/videos`, {
+      file_url: mediaItems[0].url,
+      description: caption,
       access_token: token
     });
+    return result.id || result.post_id || 'published';
   }
-  return result.id || result.post_id || 'published';
+  if (mediaItems.length === 1) {
+    const result = await postMetaGraph(`${root}/photos`, {
+      url: mediaItems[0].url,
+      caption,
+      access_token: token
+    });
+    return result.id || result.post_id || 'published';
+  }
+
+  const photoIds = [];
+  for (const media of mediaItems) {
+    const photo = await postMetaGraph(`${root}/photos`, {
+      url: media.url,
+      published: false,
+      access_token: token
+    });
+    if (!photo.id) throw new Error('Facebook did not return an ID for an album photo.');
+    photoIds.push(photo.id);
+  }
+  const albumParams = { message: caption, access_token: token };
+  photoIds.forEach((id, index) => {
+    albumParams[`attached_media[${index}]`] = JSON.stringify({ media_fbid: id });
+  });
+  const album = await postMetaGraph(`${root}/feed`, albumParams);
+  return album.id || album.post_id || 'published';
 }
 
-async function publishInstagram(account, caption, mediaUrl, mimeType) {
-  if (!mediaUrl) throw new Error('Instagram publishing requires an image or video.');
+async function waitForInstagramVideo(version, containerId, token) {
+  const deadline = Date.now() + 5 * 60 * 1000;
+  while (Date.now() < deadline) {
+    const status = await requestJson(
+      `https://graph.facebook.com/${version}/${encodeURIComponent(containerId)}?fields=status_code&access_token=${encodeURIComponent(token)}`,
+      { method: 'GET' }
+    );
+    if (status.status_code === 'FINISHED') return;
+    if (status.status_code === 'ERROR' || status.status_code === 'EXPIRED') {
+      throw new Error(`Instagram media processing ended with ${status.status_code}.`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+  }
+  throw new Error('Instagram video processing timed out; retry after checking the account.');
+}
+
+async function publishInstagram(account, caption, mediaItems) {
+  if (!mediaItems.length) throw new Error('Instagram publishing requires an image or video.');
   const version = config.metaGraphApiVersion;
   const root = `https://graph.facebook.com/${version}/${encodeURIComponent(account.account_id)}`;
   const token = decryptSecret(account.access_token_enc);
-  const isVideo = mimeType.startsWith('video/');
-  const creation = await postMetaGraph(`${root}/media`, {
-    [isVideo ? 'video_url' : 'image_url']: mediaUrl,
-    media_type: isVideo ? 'REELS' : undefined,
-    caption,
-    access_token: token
-  });
-
-  if (isVideo) {
-    const deadline = Date.now() + 5 * 60 * 1000;
-    let ready = false;
-    while (Date.now() < deadline) {
-      const status = await requestJson(
-        `https://graph.facebook.com/${version}/${encodeURIComponent(creation.id)}?fields=status_code&access_token=${encodeURIComponent(token)}`,
-        { method: 'GET' }
-      );
-      if (status.status_code === 'FINISHED') {
-        ready = true;
-        break;
-      }
-      if (status.status_code === 'ERROR' || status.status_code === 'EXPIRED') {
-        throw new Error(`Instagram media processing ended with ${status.status_code}.`);
-      }
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-    }
-    if (!ready) throw new Error('Instagram video processing timed out; retry after checking the account.');
+  const isCarousel = mediaItems.length > 1;
+  const containerIds = [];
+  const videoContainerIds = [];
+  for (const media of mediaItems) {
+    const isVideo = media.mimeType.startsWith('video/');
+    const creation = await postMetaGraph(`${root}/media`, {
+      [isVideo ? 'video_url' : 'image_url']: media.url,
+      media_type: isCarousel ? (isVideo ? 'VIDEO' : undefined) : (isVideo ? 'REELS' : undefined),
+      is_carousel_item: isCarousel ? true : undefined,
+      caption: isCarousel ? undefined : caption,
+      access_token: token
+    });
+    if (!creation.id) throw new Error('Instagram did not return a media container ID.');
+    containerIds.push(creation.id);
+    if (isVideo) videoContainerIds.push(creation.id);
   }
+  await Promise.all(videoContainerIds.map((id) => waitForInstagramVideo(version, id, token)));
 
+  const publishContainer = isCarousel
+    ? await postMetaGraph(`${root}/media`, {
+        media_type: 'CAROUSEL',
+        children: containerIds.join(','),
+        caption,
+        access_token: token
+      })
+    : { id: containerIds[0] };
+  if (!publishContainer.id) throw new Error('Instagram did not return a publishable media container.');
   const published = await postMetaGraph(`${root}/media_publish`, {
-    creation_id: creation.id,
+    creation_id: publishContainer.id,
     access_token: token
   });
   return published.id || 'published';
@@ -145,19 +185,24 @@ export async function getTikTokPublishStatus(account, publishId) {
 }
 
 export async function publishToPlatform(platform, account, caption, mediaUrl, mimeType) {
+  const mediaItems = Array.isArray(mediaUrl)
+    ? mediaUrl
+    : mediaUrl
+      ? [{ url: mediaUrl, mimeType: mimeType || '' }]
+      : [];
   switch (platform) {
     case 'facebook':
-      return publishFacebook(account, caption, mediaUrl, mimeType || '');
+      return publishFacebook(account, caption, mediaItems);
     case 'instagram':
-      return publishInstagram(account, caption, mediaUrl, mimeType || '');
+      return publishInstagram(account, caption, mediaItems);
     case 'x':
-      if (mediaUrl) throw new Error('X media publishing is not enabled; this integration currently supports text posts only.');
+      if (mediaItems.length) throw new Error('X media publishing is not enabled; this integration currently supports text posts only.');
       return publishX(account, caption);
     case 'tiktok':
-      if (mimeType && !mimeType.startsWith('video/')) {
+      if (mediaItems.length !== 1 || !mediaItems[0].mimeType.startsWith('video/')) {
         throw new Error('TikTok integration currently supports video posts only.');
       }
-      return publishTikTok(account, caption, mediaUrl);
+      return publishTikTok(account, caption, mediaItems[0].url);
     default:
       throw new Error(`Unsupported platform: ${platform}.`);
   }

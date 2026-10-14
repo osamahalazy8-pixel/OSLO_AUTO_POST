@@ -23,7 +23,57 @@ export function localizeError(message = '') {
     ['Only scheduled or failed posts can be deleted.', 'يمكن حذف المنشورات المجدولة أو الفاشلة فقط.'],
     ['This account has scheduled or publishing posts. Cancel them before disconnecting.', 'لدى هذا الحساب منشورات مجدولة أو قيد النشر. احذفها أو انتظر اكتمالها قبل إلغاء الربط.'],
     ['This post has a published or active delivery and cannot be deleted from the history.', 'لا يمكن حذف هذا المنشور من السجل لوجود عملية نشر ناجحة أو نشطة.'],
-    ['Unexpected server error.', 'حدث خطأ غير متوقع في الخادم. يرجى المحاولة لاحقًا.']
+    ['Unexpected server error.', 'حدث خطأ غير متوقع في الخادم. يرجى المحاولة لاحقًا.'],
+    ['Authentication required.', 'سجّل الدخول للمتابعة.'],
+    ['Your session has expired. Please sign in again.', 'انتهت جلسة الدخول. سجّل الدخول مجددًا.'],
+    ['Your session is invalid. Please sign in again.', 'جلسة الدخول غير صالحة. سجّل الدخول مجددًا.'],
+    ['Your account is awaiting owner approval.', 'حسابك بانتظار موافقة مالك مساحة العمل.'],
+    ['You do not have permission to perform this action.', 'ليست لديك صلاحية لتنفيذ هذا الإجراء.'],
+    ['Email or password is incorrect.', 'البريد الإلكتروني أو كلمة المرور غير صحيحة.'],
+    ['An account with this email already exists.', 'يوجد حساب مسجل بهذا البريد الإلكتروني.'],
+    ['The owner must approve your account before you can access the workspace.', 'يجب أن يوافق مالك مساحة العمل على حسابك قبل الدخول.'],
+    ['An owner account was created. Verify your email, then sign in if email confirmation is enabled.', 'أُنشئ حساب المالك. تحقق من بريدك الإلكتروني ثم سجّل الدخول إذا طُلب تأكيد البريد.'],
+    ['Your account is suspended. Contact the workspace owner.', 'حسابك موقوف. تواصل مع مالك مساحة العمل.'],
+    ['Enter a valid email address.', 'أدخل بريدًا إلكترونيًا صالحًا.'],
+    ['Password must be between 12 and 128 characters.', 'يجب أن يتراوح طول كلمة المرور بين 12 و128 حرفًا.'],
+    ['Enter a display name of at most 100 characters.', 'أدخل اسمًا لا يتجاوز 100 حرف.'],
+    ['Email and password are required.', 'البريد الإلكتروني وكلمة المرور مطلوبان.'],
+    ['User profile is not available. Contact the workspace owner.', 'تعذر العثور على ملف حسابك. تواصل مع مالك مساحة العمل.'],
+    ['The account profile was not created.', 'تعذر إنشاء ملف الحساب. يرجى المحاولة مجددًا.'],
+    ['Choose a valid non-owner role.', 'اختر دورًا صالحًا غير دور المالك.'],
+    ['Choose active or suspended status.', 'اختر حالة مفعّلة أو موقوفة.'],
+    ['You cannot change your own role or account status.', 'لا يمكنك تغيير دور حسابك أو حالته بنفسك.'],
+    ['The owner account cannot be changed here.', 'لا يمكن تغيير حساب المالك من هذه الصفحة.'],
+    ['Only the owner can appoint an administrator.', 'يمكن للمالك وحده تعيين مدير.'],
+    ['Only the owner can manage an administrator account.', 'يمكن للمالك وحده إدارة حساب المدير.'],
+    ['Choose a role or account status to update.', 'اختر دورًا أو حالة لتحديث الحساب.'],
+    ['User not found.', 'لم يتم العثور على المستخدم.'],
+    ['The owner setup key is missing or incorrect.', 'رمز إعداد المالك مفقود أو غير صحيح. تحقق من الرمز الذي أعده مسؤول النشر.'],
+    ['Select one or more images or videos first.', 'اختر صورة أو فيديو واحدًا على الأقل.'],
+    ['Selected platforms are invalid.', 'المنصات المحددة غير صالحة.'],
+    ['Choose crop or blur for media that needs a new frame.', 'اختر القص أو الخلفية المموهة لملاءمة الوسائط.'],
+    ['Uploaded media variants are required.', 'تعذر العثور على النسخ المجهزة للمنصات. أعد رفع الملفات.'],
+    ['Uploaded media metadata is invalid.', 'بيانات الملف المرفوع غير صالحة. أعد رفعه.'],
+    ['Media must be a list of uploaded files.', 'يجب رفع الملفات قبل جدولة المنشور.'],
+    ['Only supported image and video formats are accepted.', 'تُقبل الصور والفيديوهات فقط. اختر صيغة شائعة مدعومة.'],
+    ['Image format is unsupported or the image file is damaged. Use JPEG, PNG, WebP, AVIF, TIFF, or GIF.', 'تعذرت قراءة الصورة. استخدم JPEG أو PNG أو WebP أو AVIF أو TIFF أو GIF وتأكد أن الملف سليم.'],
+    ['Video conversion is unavailable on this server.', 'تحويل الفيديو غير متاح حاليًا على الخادم.'],
+    ['The total upload must be no larger than 250 MB.', 'يجب ألا يتجاوز مجموع الملفات 250 ميغابايت.'],
+    ['The converted video exceeds the 100 MB per-file limit. Try a shorter video.', 'تجاوز الفيديو بعد التحويل الحد الأقصى (100 ميغابايت). جرّب فيديو أقصر.'],
+    ['The converted media exceeds the 100 MB per-file limit.', 'تجاوز الملف بعد التحويل الحد الأقصى (100 ميغابايت).'],
+    ['Video conversion failed. Use a valid MP4, MOV, WebM, or MKV video.', 'تعذر تحويل الفيديو. استخدم MP4 أو MOV أو WebM أو MKV وتأكد أن الملف سليم.'],
+    ['Video conversion timed out. Try a shorter or smaller video.', 'استغرق تحويل الفيديو وقتًا طويلًا. جرّب فيديو أقصر أو أصغر حجمًا.'],
+    ['Choose no more than 10 media files.', 'اختر 10 ملفات كحد أقصى للمنشور الواحد.'],
+    ['Instagram carousels support up to 10 media items.', 'تدعم منشورات Instagram حتى 10 عناصر.'],
+    ['Facebook posts support one video or up to 10 images at a time.', 'يدعم Facebook فيديو واحدًا أو حتى 10 صور في المنشور.'],
+    ['Facebook photo albums support up to 10 images.', 'تدعم ألبومات Facebook حتى 10 صور.'],
+    ['TikTok publishing requires exactly one video and does not support image posts.', 'يتطلب TikTok فيديو واحدًا فقط ولا يدعم الصور.'],
+    ['X media publishing is not enabled; this integration currently supports text posts only.', 'النشر على X يدعم النص فقط حاليًا؛ أزل الوسائط أو أزل المنصة.'],
+    ['Instagram publishing requires an image or video.', 'يتطلب النشر على Instagram صورة أو فيديو.'],
+    ['Facebook did not return an ID for an album photo.', 'لم يُرجع Facebook معرّف إحدى صور الألبوم. تحقق من الربط وأعد المحاولة.'],
+    ['Instagram did not return a media container ID.', 'لم يُرجع Instagram معرّف حاوية الوسائط. تحقق من الربط وأعد المحاولة.'],
+    ['Instagram did not return a publishable media container.', 'تعذر تجهيز المنشور لدى Instagram. تحقق من الربط وأعد المحاولة.'],
+    ['TikTok integration currently supports video posts only.', 'يدعم TikTok نشر الفيديو فقط حاليًا.']
   ]);
   if (exactMessages.has(message)) return exactMessages.get(message);
 
@@ -57,14 +107,16 @@ export function localizeError(message = '') {
 }
 
 export async function api(path, options = {}) {
-  const response = await fetch(path, options);
+  const response = await fetch(path, { credentials: 'same-origin', ...options });
   if (response.status === 204) return null;
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const messages = Array.isArray(body.details) && body.details.length
       ? body.details.map(localizeError).join(' ')
       : localizeError(body.error || `Request failed (${response.status}).`);
-    throw new Error(messages);
+    const error = new Error(messages);
+    error.status = response.status;
+    throw error;
   }
   return body;
 }
