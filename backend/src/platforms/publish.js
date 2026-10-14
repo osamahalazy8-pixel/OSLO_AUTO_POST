@@ -13,28 +13,32 @@ async function requestJson(url, options) {
   return body;
 }
 
+async function postMetaGraph(url, params) {
+  const body = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null) body.set(key, String(value));
+  }
+  return requestJson(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: body.toString()
+  });
+}
+
 async function publishFacebook(account, caption, mediaUrl, mimeType) {
   const version = config.metaGraphApiVersion;
   const root = `https://graph.facebook.com/${version}/${encodeURIComponent(account.account_id)}`;
   const token = decryptSecret(account.access_token_enc);
   let result;
   if (!mediaUrl) {
-    result = await requestJson(`${root}/feed`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ message: caption, access_token: token })
-    });
+    result = await postMetaGraph(`${root}/feed`, { message: caption, access_token: token });
   } else {
     const isVideo = mimeType.startsWith('video/');
     const endpoint = isVideo ? 'videos' : 'photos';
-    result = await requestJson(`${root}/${endpoint}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        [isVideo ? 'file_url' : 'url']: mediaUrl,
-        [isVideo ? 'description' : 'caption']: caption,
-        access_token: token
-      })
+    result = await postMetaGraph(`${root}/${endpoint}`, {
+      [isVideo ? 'file_url' : 'url']: mediaUrl,
+      [isVideo ? 'description' : 'caption']: caption,
+      access_token: token
     });
   }
   return result.id || result.post_id || 'published';
@@ -46,15 +50,11 @@ async function publishInstagram(account, caption, mediaUrl, mimeType) {
   const root = `https://graph.facebook.com/${version}/${encodeURIComponent(account.account_id)}`;
   const token = decryptSecret(account.access_token_enc);
   const isVideo = mimeType.startsWith('video/');
-  const creation = await requestJson(`${root}/media`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      [isVideo ? 'video_url' : 'image_url']: mediaUrl,
-      media_type: isVideo ? 'REELS' : undefined,
-      caption,
-      access_token: token
-    })
+  const creation = await postMetaGraph(`${root}/media`, {
+    [isVideo ? 'video_url' : 'image_url']: mediaUrl,
+    media_type: isVideo ? 'REELS' : undefined,
+    caption,
+    access_token: token
   });
 
   if (isVideo) {
@@ -77,10 +77,9 @@ async function publishInstagram(account, caption, mediaUrl, mimeType) {
     if (!ready) throw new Error('Instagram video processing timed out; retry after checking the account.');
   }
 
-  const published = await requestJson(`${root}/media_publish`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ creation_id: creation.id, access_token: token })
+  const published = await postMetaGraph(`${root}/media_publish`, {
+    creation_id: creation.id,
+    access_token: token
   });
   return published.id || 'published';
 }
