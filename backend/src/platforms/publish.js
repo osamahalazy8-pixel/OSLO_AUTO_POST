@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+﻿import { config } from '../config.js';
 import { decryptSecret } from '../crypto.js';
 
 async function requestJson(url, options) {
