@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { config } from './config.js';
 import { supabase } from './supabase.js';
 import { getTikTokPublishStatus, publishToPlatform } from './platforms/publish.js';
+import { refreshOAuthAccount } from './oauth.js';
 
 let running = false;
 
@@ -61,10 +62,11 @@ async function processDueDeliveries() {
           : delivery.scheduled_posts;
         const { data: account, error: accountError } = await supabase
           .from('social_accounts')
-          .select('id, platform, account_id, access_token_enc, metadata')
+          .select('id, platform, account_id, access_token_enc, secret_enc, metadata')
           .eq('id', delivery.account_id)
           .single();
         if (accountError) throw accountError;
+        const currentAccount = await refreshOAuthAccount(account);
         let mediaItems = [];
         if (Array.isArray(post.media_items) && post.media_items.length) {
           for (const item of post.media_items) {
@@ -88,7 +90,7 @@ async function processDueDeliveries() {
 
         const publishResult = await publishToPlatform(
           delivery.platform,
-          account,
+          currentAccount,
           post.caption,
           mediaItems
         );
@@ -155,12 +157,13 @@ async function pollTikTokDeliveries() {
     try {
       const { data: account, error: accountError } = await supabase
         .from('social_accounts')
-        .select('id, platform, account_id, access_token_enc, metadata')
+        .select('id, platform, account_id, access_token_enc, secret_enc, metadata')
         .eq('id', delivery.account_id)
         .single();
       if (accountError) throw accountError;
 
-      const status = await getTikTokPublishStatus(account, delivery.platform_post_id);
+      const currentAccount = await refreshOAuthAccount(account);
+      const status = await getTikTokPublishStatus(currentAccount, delivery.platform_post_id);
       let update;
       if (status?.status === 'PUBLISH_COMPLETE') {
         update = {

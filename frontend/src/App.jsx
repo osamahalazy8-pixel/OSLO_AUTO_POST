@@ -40,6 +40,22 @@ function App() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthResult = params.get('oauth');
+    if (!oauthResult) return;
+    const platform = params.get('platform');
+    if (oauthResult === 'success') {
+      setNotice(`تم ربط الحساب رسميًا مع ${platformNames[platform] || 'المنصة'}.`);
+    } else if (oauthResult === 'select') {
+      setNotice('تم التحقق من الحساب. اختر الصفحة والوجهات التي تريد ربطها.');
+    } else {
+      setNotice('لم يكتمل الربط. أعد المحاولة وتأكد من إعداد تطبيق المطور والصلاحيات المطلوبة.');
+    }
+    setSection('accounts');
+    window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.hash}`);
+  }, []);
+
   const loadData = useCallback(async () => {
     setError('');
     try {
@@ -463,6 +479,11 @@ function Connections({ accounts, onChange, onNotice, onOpenGuide }) {
   const [form, setForm] = useState({ accountId: '', displayName: '', accessToken: '', privacy: 'SELF_ONLY' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [oauthProviders, setOauthProviders] = useState({});
+  const [oauthBusy, setOauthBusy] = useState('');
+  const [pendingMetaPages, setPendingMetaPages] = useState([]);
+  const [selectedMetaPage, setSelectedMetaPage] = useState('');
+  const [selectedMetaPlatforms, setSelectedMetaPlatforms] = useState([]);
   const accountMap = new Map(accounts.map((account) => [account.platform, account]));
   const platforms = [
     { id: 'instagram', name: 'Instagram', hint: 'حساب احترافي مرتبط بصفحة Facebook، مع معرّف الحساب ورمز صفحة يملك صلاحية نشر محتوى Instagram.' },
@@ -470,6 +491,60 @@ function Connections({ accounts, onChange, onNotice, onOpenGuide }) {
     { id: 'x', name: 'X', hint: 'رمز OAuth 2.0 لمستخدم X مع صلاحية كتابة المنشورات. النشر النصي فقط مدعوم حاليًا.' },
     { id: 'tiktok', name: 'TikTok', hint: 'رمز وصول المستخدم ومعرّف Open ID، مع موافقة TikTok على Content Posting API.' }
   ];
+
+  useEffect(() => {
+    Promise.all([api('/api/oauth/providers'), api('/api/oauth/pending')])
+      .then(([providers, pending]) => {
+        setOauthProviders(providers);
+        setPendingMetaPages(pending.pages);
+        setSelectedMetaPage(pending.pages[0]?.id || '');
+        setSelectedMetaPlatforms(pending.pages[0]?.instagram ? ['facebook', 'instagram'] : ['facebook']);
+      })
+      .catch((loadError) => setError(localizeError(loadError.message)));
+  }, []);
+
+  const startOAuth = async (platform) => {
+    setOauthBusy(platform);
+    setError('');
+    try {
+      const result = await api(`/api/oauth/${platform}/start`, { method: 'POST' });
+      window.location.assign(result.authorizeUrl);
+    } catch (oauthError) {
+      setError(localizeError(oauthError.message));
+      setOauthBusy('');
+    }
+  };
+
+  const toggleMetaPlatform = (platform) => {
+    setSelectedMetaPlatforms((selected) => selected.includes(platform)
+      ? selected.filter((item) => item !== platform)
+      : [...selected, platform]);
+  };
+
+  const completeMetaConnection = async () => {
+    setOauthBusy('meta');
+    setError('');
+    try {
+      const result = await api('/api/oauth/meta/complete', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pageId: selectedMetaPage, platforms: selectedMetaPlatforms })
+      });
+      setPendingMetaPages([]);
+      await onChange();
+      onNotice(`تم ربط ${result.connected.map((item) => platformNames[item]).join(' و')} رسميًا.`);
+    } catch (oauthError) {
+      setError(localizeError(oauthError.message));
+    } finally {
+      setOauthBusy('');
+    }
+  };
+
+  const onMetaPageChange = (pageId) => {
+    setSelectedMetaPage(pageId);
+    const page = pendingMetaPages.find((item) => item.id === pageId);
+    setSelectedMetaPlatforms(page?.instagram ? ['facebook', 'instagram'] : ['facebook']);
+  };
 
   const startEdit = (platform) => {
     const account = accountMap.get(platform);
@@ -534,13 +609,35 @@ function Connections({ accounts, onChange, onNotice, onOpenGuide }) {
           <p className="connection-hint">{platform.hint}</p>
           {account && <div className="account-summary"><span className="status-dot" />{account.display_name}<span className="account-id">{account.account_id}</span></div>}
           <div className="connection-actions">
-            <button className="button button-secondary button-small" onClick={() => startEdit(platform.id)}>{account ? 'تحديث بيانات الربط' : 'ربط الحساب'}</button>
+            <button className="button button-secondary button-small" onClick={() => startEdit(platform.id)}>{account ? 'تحديث يدوي' : 'ربط يدوي'}</button>
+            <button
+              className="button button-primary button-small"
+              disabled={!oauthProviders[platform.id]?.configured || Boolean(oauthBusy)}
+              title={oauthProviders[platform.id]?.configured ? 'تسجيل الدخول والموافقة لدى المنصة' : 'يتطلب إعداد تطبيق المطور على الخادم'}
+              onClick={() => void startOAuth(platform.id)}
+            >{oauthBusy === platform.id ? <LoaderCircle className="spin" size={14} /> : <ArrowUpRight size={14} />} ربط رسمي</button>
             {account && <button className="text-button danger-text" onClick={() => void disconnect(account)}>إلغاء الربط</button>}
           </div>
+          {!oauthProviders[platform.id]?.configured && <p className="helper-text oauth-unavailable">يتطلب تفعيل الربط الرسمي إعداد مفاتيح تطبيق المطور لهذه المنصة.</p>}
         </article>;
       })}
     </div>
-    <div className="notice-card"><AlertCircle size={18} /><p><strong>قبل الربط:</strong> يلزم إنشاء تطبيق مطوّر للمنصة، ومنح صلاحيات النشر المطلوبة، وإكمال المراجعة أو التحقق التجاري عند الحاجة. حفظ الرمز وحده لا يمنح التطبيق صلاحية النشر. افتح «دليل ربط المنصات» لشرح الخطوات وبيان ما يوضع في كل خانة.</p></div>
+    <div className="notice-card"><AlertCircle size={18} /><p><strong>خيارات الربط:</strong> «ربط رسمي» يحوّلك إلى صفحة تسجيل الدخول التابعة للمنصة ويطلب موافقتك على الصلاحيات؛ لا نطلب كلمة مرورك ولا نراها. يتطلب إعداد تطبيق مطوّر ومراجعته لدى المنصة. «ربط يدوي» متاح كخيار بديل بإدخال رمز وصول صالح.</p></div>
+    {pendingMetaPages.length > 0 && <section className="panel oauth-page-picker">
+      <div className="section-heading"><div><span className="eyebrow">تفويض Meta مكتمل</span><h2>اختر صفحة النشر</h2></div></div>
+      <p className="helper-text">اختر صفحة Facebook التي تريد استخدامها. يمكن ربط حساب Instagram الاحترافي إذا كان مرتبطًا بهذه الصفحة.</p>
+      <label className="field-label" htmlFor="oauth-meta-page">صفحة Facebook</label>
+      <select id="oauth-meta-page" className="text-input" value={selectedMetaPage} onChange={(event) => onMetaPageChange(event.target.value)}>
+        {pendingMetaPages.map((page) => <option value={page.id} key={page.id}>{page.name}{page.instagram ? ` · @${page.instagram.username || page.instagram.id}` : ''}</option>)}
+      </select>
+      <div className="fit-mode-options oauth-platform-options">
+        <label><input type="checkbox" checked={selectedMetaPlatforms.includes('facebook')} onChange={() => toggleMetaPlatform('facebook')} /> ربط Facebook</label>
+        <label><input type="checkbox" disabled={!pendingMetaPages.find((page) => page.id === selectedMetaPage)?.instagram} checked={selectedMetaPlatforms.includes('instagram')} onChange={() => toggleMetaPlatform('instagram')} /> ربط Instagram الاحترافي</label>
+      </div>
+      <button className="button button-primary" disabled={!selectedMetaPlatforms.length || Boolean(oauthBusy)} onClick={() => void completeMetaConnection()}>
+        {oauthBusy === 'meta' ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />} تأكيد ربط الحسابات المحددة
+      </button>
+    </section>}
     {editing && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) setEditing(null);
     }}>
@@ -573,14 +670,14 @@ function PlatformGuide({ onOpenSettings }) {
       <section className="guide-hero">
         <span className="welcome-kicker">دليل خطوة بخطوة</span>
         <h2>اربط حساباتك بنفسك وبأمان</h2>
-        <p>اتبع الخطوات الخاصة بالمنصة، ثم أدخل ثلاثة أشياء في صفحة الربط: اسمًا تختاره، ومعرّف الحساب، ورمز وصول صالحًا للنشر.</p>
+        <p>يمكنك ربط الحساب بتفويض رسمي من صفحة المنصة، أو إدخال معرّف الحساب ورمز الوصول يدويًا. لا نطلب كلمة مرور حسابك الاجتماعي.</p>
         <button className="button button-dark" onClick={onOpenSettings}><Settings2 size={17} /> الانتقال إلى ربط الحسابات</button>
       </section>
 
       <section className="guide-warning">
         <AlertCircle size={21} />
         <div><strong>معلومة مهمة قبل البدء</strong>
-          <p>هذا المشروع لا يسجّل الدخول إلى المنصات نيابةً عنك ولا ينشئ رموزًا تلقائيًا. أنشئ تطبيق مطوّر في المنصة، واستخرج رمز المستخدم/الصفحة من أدواتها الرسمية، ثم الصقه في خانة «رمز الوصول». لا تضع App Secret أو كلمة مرور حسابك مكان الرمز.</p>
+          <p>خيار «ربط رسمي» يحوّلك إلى تسجيل الدخول لدى المنصة لتمنح التطبيق الصلاحيات بنفسك؛ تبقى كلمة المرور لدى المنصة ولا تصل إلى موقعنا. يتطلب ذلك إعداد تطبيق مطوّر، وتسجيل رابط العودة الظاهر في إعدادات الخدمة، وموافقة المنصة عند الحاجة. ويمكن استخدام الربط اليدوي بإدخال رمز مستخدم/صفحة صالح في صفحة الحسابات. لا تضع App Secret أو كلمة مرورك في خانة الرمز.</p>
           <p>التطبيق مخصص للاستخدام الشخصي وليس تطبيق OAuth عامًا متعدد المستخدمين. قد تطلب المنصة مراجعة تطبيقك أو منح صلاحية متقدمة، وقد ترفض الرمز أو تحدّ من النشر قبل الموافقة.</p>
         </div>
       </section>

@@ -160,7 +160,11 @@ h1,h2,h3,p { margin-top: 0; }
 .connection-hint { min-height: 35px; margin: 15px 0; font-size: 10px; color: #8f98a7; line-height: 1.55; }
 .account-summary { display: flex; align-items: center; gap: 7px; background: #f8faf9; border-radius: 6px; padding: 8px; margin-bottom: 12px; color: #4b5c56; font-size: 10px; }
 .account-id { margin-left: auto; color: #9aa29f; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.connection-actions { display: flex; align-items: center; gap: 13px; }
+.connection-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.oauth-unavailable { margin-top: 8px; }
+.oauth-page-picker { margin-top: 17px; }
+.oauth-page-picker .field-label { margin-top: 12px; }
+.oauth-platform-options { display: flex; flex-wrap: wrap; gap: 18px; margin: 13px 0; }
 .danger-text { color: #bc5a52; }
 .notice-card { margin-top: 17px; padding: 13px 14px; background: #fff9eb; border: 1px solid #f6e9ca; border-radius: 8px; color: #96742a; display: flex; align-items: flex-start; gap: 10px; }
 .notice-card svg { flex-shrink: 0; margin-top: 2px; }

@@ -14,6 +14,7 @@ import { authenticate, clearSessionCookies, requireActive, requireRoles, ROLES, 
 import { encryptSecret } from './crypto.js';
 import { MAX_MEDIA_FILES, MAX_TOTAL_UPLOAD_BYTES, MAX_UPLOAD_BYTES, PLATFORM_LIMITS, validateMediaSelection, validatePost } from './platforms/limits.js';
 import { MediaProcessingError, transformMedia } from './media.js';
+import { beginOAuth, completeMetaPageSelection, completeOAuthCallback, getOAuthProviderStatus, getPendingMetaPages, OAuthFlowError } from './oauth.js';
 import { startScheduler } from './scheduler.js';
 
 const app = express();
@@ -81,6 +82,21 @@ app.get('/api/platforms', (_req, res) => {
     needsMedia: limits.needsMedia
   })));
 });
+
+app.get('/api/oauth/:platform/callback', asyncRoute(async (req, res) => {
+  try {
+    const result = await completeOAuthCallback(req.params.platform, req.query);
+    const destination = new URL(config.frontendUrl);
+    destination.searchParams.set('oauth', result.pendingSelection ? 'select' : 'success');
+    if (!result.pendingSelection) destination.searchParams.set('platform', req.params.platform);
+    res.redirect(303, destination.toString());
+  } catch (error) {
+    console.error(`OAuth callback failed for ${req.params.platform}:`, error.message);
+    const destination = new URL(config.frontendUrl);
+    destination.searchParams.set('oauth', 'error');
+    res.redirect(303, destination.toString());
+  }
+}));
 
 app.get('/api/auth/bootstrap', asyncRoute(async (_req, res, next) => {
   const { data, error } = await supabase
@@ -181,6 +197,24 @@ app.get('/api/auth/session', (req, res) => {
 });
 
 app.use('/api', requireActive);
+
+app.get('/api/oauth/providers', (req, res) => {
+  res.json(getOAuthProviderStatus());
+});
+
+app.post('/api/oauth/:platform/start', requireRoles('owner', 'admin'), asyncRoute(async (req, res) => {
+  res.json(beginOAuth(req.params.platform, req.user.id));
+}));
+
+app.get('/api/oauth/pending', requireRoles('owner', 'admin'), (req, res) => {
+  res.json({ pages: getPendingMetaPages(req.user.id) });
+});
+
+app.post('/api/oauth/meta/complete', requireRoles('owner', 'admin'), asyncRoute(async (req, res) => {
+  const { pageId, platforms } = req.body || {};
+  const result = await completeMetaPageSelection(req.user.id, pageId, platforms);
+  res.json(result);
+}));
 
 app.get('/api/users', requireRoles('owner', 'admin'), asyncRoute(async (_req, res, next) => {
   const { data, error } = await supabase
@@ -547,6 +581,9 @@ app.use((error, _req, res, _next) => {
     return res.status(400).json({ error: `Choose no more than ${MAX_MEDIA_FILES} media files.` });
   }
   if (error instanceof MediaProcessingError) {
+    return res.status(error.statusCode).json({ error: error.message });
+  }
+  if (error instanceof OAuthFlowError) {
     return res.status(error.statusCode).json({ error: error.message });
   }
   res.status(500).json({

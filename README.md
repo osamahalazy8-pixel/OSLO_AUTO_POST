@@ -11,7 +11,7 @@ It includes email/password sign-in, role-based access, and a single shared works
 4. Open the Vite URL printed in the terminal (normally `http://localhost:5173`).
 
 Generate an encryption key with `openssl rand -hex 32`. A 64-character hexadecimal key is recommended; the backend also accepts a base64-encoded 32-byte key or a passphrase of at least 16 characters and derives a 32-byte key from it. Keep the exact value stable and backed up: changing it makes already stored platform tokens unreadable.
-The Supabase service-role key and encryption key must only exist in the backend environment; never add them to frontend variables or source control. The anon key is used only by the backend authentication client and is not a secret. Set `OWNER_SETUP_KEY` to a random one-time bootstrap secret (for example, `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`). The first registration must provide this secret to claim the owner role. Remove it from Render after the owner account is created; later public registrations do not use it and remain pending until approval.
+The Supabase service-role key, encryption key, and social-provider client secrets must only exist in the backend environment; never add them to frontend variables or source control. The anon key is used only by the backend authentication client and is not a secret. Set `OWNER_SETUP_KEY` to a random one-time bootstrap secret (for example, `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`). The first registration must provide this secret to claim the owner role. Remove it from Render after the owner account is created; later public registrations do not use it and remain pending until approval.
 
 ## Accounts and roles
 
@@ -34,8 +34,23 @@ Deploy the repository as one Node Web Service using `npm install && npm run buil
 | `SCHEDULER_ENABLED` | `true` to enable scheduled publishing. Run only one Render instance with this enabled. |
 | `META_GRAPH_API_VERSION` | `v22.0` (change when upgrading to a supported Meta Graph API version). |
 | `X_API_BASE_URL` | `https://api.x.com/2` (the standard X API v2 endpoint). |
+| `META_APP_ID` / `META_APP_SECRET` | Meta developer app credentials. Optional; enable official Facebook and Instagram OAuth. |
+| `X_CLIENT_ID` / `X_CLIENT_SECRET` | X OAuth 2.0 confidential web-app credentials with Authorization Code + PKCE enabled. |
+| `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` | TikTok Login Kit app credentials with the required user-info and video-publishing products/scopes approved. |
+| `PUBLIC_BASE_URL` | Optional canonical public server URL. Render's `RENDER_EXTERNAL_URL` is used when this is unset. |
+| `FRONTEND_URL` | Optional frontend return URL; defaults to the Render service URL in production and `http://localhost:5173` locally. |
 
 The Express server serves the built Vite app and runs the UTC background scheduler. Use a single service instance: delivery rows are claimed atomically, but deployments or crashes during a remote publish request can still create an uncertain delivery outcome.
+
+### Official account authorization (OAuth)
+
+The Connections page offers both the existing manual token entry and an official provider sign-in option. OAuth never asks for or receives the user's platform password. Set the provider credentials above in Render, then copy the callback URLs shown by `GET /api/oauth/providers` into each developer application's allow-listed redirect/callback URLs:
+
+- Meta (shared by Facebook and Instagram): `https://<your-service>/api/oauth/facebook/callback`
+- X: `https://<your-service>/api/oauth/x/callback`
+- TikTok: `https://<your-service>/api/oauth/tiktok/callback`
+
+Use the exact HTTPS service URL shown by Render. Meta OAuth presents the pages available to the consenting Facebook user, then lets the workspace owner select a Page and its linked professional Instagram account. X requests `users.read`, `tweet.write`, and `offline.access`; TikTok requests `user.info.basic` and `video.publish`. The provider app must enable these products/scopes and pass any required review. The selected X and TikTok refresh tokens are encrypted, rotated automatically before access-token expiry, and stored server-side. Meta Page tokens are stored encrypted; revoking app access or removing Page permissions requires reconnecting the account. OAuth state/PKCE sessions are short-lived and kept in server memory, so keep one Render instance and complete the authorization without restarting/redeploying the service. OAuth connections are shared by this single workspace, not private per staff member.
 
 The scheduler polls once per minute, so publication is not guaranteed at an exact second. Platform review, scopes, account type, media processing, rate limits, and API availability affect delivery.
 
